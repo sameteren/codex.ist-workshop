@@ -4,10 +4,11 @@ import com.codexist.findnearlyplaces.dto.Places;
 import com.codexist.findnearlyplaces.dto.Requests;
 import com.codexist.findnearlyplaces.model.response.Example;
 import com.codexist.findnearlyplaces.model.response.FindPlacesResponse;
-import com.codexist.findnearlyplaces.model.response.Location;
 import com.codexist.findnearlyplaces.model.response.Result;
 import com.codexist.findnearlyplaces.repository.PlacesRepository;
 import com.codexist.findnearlyplaces.repository.RequestsRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ import java.util.UUID;
 
 @Service
 public class PlacesServiceImp implements PlacesService {
+    Logger log = LoggerFactory.getLogger(PlacesServiceImp.class);
     @Autowired
     RequestsRepository requestsRepository;
 
@@ -32,14 +34,22 @@ public class PlacesServiceImp implements PlacesService {
 
     @Override
     public FindPlacesResponse findNearlyPlaces(String longitude, String latitude, String radius) {
-
+        List<Places> placesList;
+        Requests requests = new Requests();
+        Example allNearlyPlaces = new Example();
+        FindPlacesResponse findPlacesResponse = new FindPlacesResponse();
         Requests savedRequest = requestsRepository.findByLongitudeAndLatitudeAndRadius(longitude, latitude, radius);
         if (savedRequest == null) {
             String uri = GOOGLE_API_URL;
             RestTemplate restTemplate = new RestTemplate();
-            Example allNearlyPlaces = restTemplate.getForObject(
-                    uri, Example.class, longitude, latitude, radius, GOOGLE_API_KEY);
-            Requests requests = new Requests();
+            try {
+                 allNearlyPlaces = restTemplate.getForObject(
+                        uri, Example.class, longitude, latitude, radius, GOOGLE_API_KEY);
+            }
+            catch (Exception e)
+            {
+                log.error("Google Places API Error");
+            }
             requests.setLatitude(latitude);
             requests.setLongitude(longitude);
             requests.setRadius(radius);
@@ -56,9 +66,15 @@ public class PlacesServiceImp implements PlacesService {
                 placesRepository.save(places);
             }
         }
+        if(savedRequest !=null)
+        {
+             placesList = placesRepository.getPlacesByRequestId(savedRequest.getRequestId());
+        }
+        else
+        {
+             placesList = placesRepository.getPlacesByRequestId(requests.getRequestId());
 
-        List<Places> placesList = placesRepository.getPlacesByRequestId(savedRequest.getRequestId());
-        FindPlacesResponse findPlacesResponse = new FindPlacesResponse();
+        }
         findPlacesResponse.setPlacesList(placesList);
         return findPlacesResponse;
 
