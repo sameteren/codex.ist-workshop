@@ -34,50 +34,70 @@ public class PlacesServiceImp implements PlacesService {
 
     @Override
     public FindPlacesResponse findNearlyPlaces(String longitude, String latitude, String radius) {
-        List<Places> placesList;
         Requests requests = new Requests();
+        requests.setRequestId(UUID.randomUUID());
         Example allNearlyPlaces = new Example();
+        String nextPageToken = "1";
         FindPlacesResponse findPlacesResponse = new FindPlacesResponse();
         Requests savedRequest = requestsRepository.findByLongitudeAndLatitudeAndRadius(longitude, latitude, radius);
         if (savedRequest == null) {
             String uri = GOOGLE_API_URL;
             RestTemplate restTemplate = new RestTemplate();
             try {
-                 allNearlyPlaces = restTemplate.getForObject(
-                        uri, Example.class, longitude, latitude, radius, GOOGLE_API_KEY);
+                while (nextPageToken !=null)
+                {
+                    allNearlyPlaces = restTemplate.getForObject(
+                            uri, Example.class, longitude, latitude, radius, GOOGLE_API_KEY);
+                    savePlaces(allNearlyPlaces,requests.getRequestId());
+                    if(allNearlyPlaces.getNextPageToken()!=null)
+                    {
+                        nextPageToken=allNearlyPlaces.getNextPageToken();
+                        uri = GOOGLE_API_URL + "&pagetoken=" + nextPageToken;
+                    }
+                    else{
+                        nextPageToken=null;
+                    }
+                }
             }
             catch (Exception e)
             {
                 log.error("Google Places API Error");
             }
-            requests.setLatitude(latitude);
-            requests.setLongitude(longitude);
-            requests.setRadius(radius);
-            requests.setRequestId(UUID.randomUUID());
-            requestsRepository.save(requests);
-            for (Result results : allNearlyPlaces.getResults()) {
-                Places places = new Places();
-                places.setName(results.getName());
-                places.setLatitude(results.getGeometry().getLocation().getLat().toString());
-                places.setLongitude(results.getGeometry().getLocation().getLng().toString());
-                places.setVicinity(results.getVicinity());
-                places.setRequestId(requests.getRequestId());
-                places.setPlacesId(UUID.randomUUID());
-                placesRepository.save(places);
-            }
+            saveRequest(requests,latitude,longitude,radius);
         }
-        if(savedRequest !=null)
-        {
-             placesList = placesRepository.getPlacesByRequestId(savedRequest.getRequestId());
-        }
-        else
-        {
-             placesList = placesRepository.getPlacesByRequestId(requests.getRequestId());
-
-        }
-        findPlacesResponse.setPlacesList(placesList);
+        findPlacesResponse.setPlacesList(getPlacesList(savedRequest, requests));
         return findPlacesResponse;
 
-
+    }
+    public void savePlaces(Example allNearlyPlaces, UUID requestID ){
+        for (Result results : allNearlyPlaces.getResults()) {
+            Places places = new Places();
+            places.setName(results.getName());
+            places.setLatitude(results.getGeometry().getLocation().getLat().toString());
+            places.setLongitude(results.getGeometry().getLocation().getLng().toString());
+            places.setVicinity(results.getVicinity());
+            places.setRequestId(requestID);
+            places.setPlacesId(UUID.randomUUID());
+            placesRepository.save(places);
+        }
+    }
+    public void saveRequest(Requests requests,String latitude, String longitude, String radius){
+        requests.setLatitude(latitude);
+        requests.setLongitude(longitude);
+        requests.setRadius(radius);
+        requests.setRequestId(requests.getRequestId());
+        requestsRepository.save(requests);
+    }
+    public List<Places> getPlacesList( Requests savedRequest,Requests requests){
+        List<Places> placesList;
+        //placesList= (savedRequest != null ? placesRepository.getPlacesByRequestId(savedRequest.getRequestId()) : placesRepository.getPlacesByRequestId(requests.getRequestId()));
+        if(savedRequest !=null)
+        {
+            placesList = placesRepository.getPlacesByRequestId(savedRequest.getRequestId());
+        }
+        else{
+            placesList = placesRepository.getPlacesByRequestId(requests.getRequestId());
+        }
+        return placesList;
     }
 }
